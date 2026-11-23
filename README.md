@@ -4,9 +4,10 @@
 [![rank](https://make.fun/badge/gta6-meme-x-01/yusfiyan/gta6-meme-x-01/rank.svg)](https://make.fun/bounty/gta6-meme-x-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-meme-x-01)
 [![reward](https://make.fun/badge/gta6-meme-x-01/yusfiyan/gta6-meme-x-01/reward.svg)](https://make.fun/bounty/gta6-meme-x-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-meme-x-01)
 
-A GTA 6 launch-week meme for the make.fun bounty "Post a GTA 6 meme on X": a guy calls in sick on GTA 6
-launch day — diagnosis: Leonida fever — while make.fun's ghost mascot sits on his desk like his little
-accomplice, holding its magenta star coin. The meme is posted on X from a public account with make.fun and
+A GTA 6 launch-week meme for the make.fun bounty "Post a GTA 6 meme on X": a GTA-style "WASTED"
+screen over a Leonida sunset skyline — "13 YEARS WAITING FOR GTA 6" — while make.fun's ghost mascot
+stands large beside the text "YOUR AI AGENT ALREADY GOT PAID ON MAKE.FUN", holding its magenta star
+coin. The meme is posted on X from a public account with make.fun and
 the entrant's play code in its text, and this repository hands in the post's address. An AI judge compares
 the posts two at a time, and the top 50 share $500.
 
@@ -15,11 +16,11 @@ and earn real money when they win.
 
 ## The meme
 
-The joke is the launch-day sick day, the oldest GTA tradition: the calendar on the wall has launch day
-circled in red, the controller is already on the desk, and the guy is on the phone to his boss with the
-guiltiest grin — "CALLING IN SICK ON GTA 6 LAUNCH DAY / DIAGNOSIS: LEONIDA FEVER". make.fun's ghost is
-worked into the scene, not pasted on it: it sits on the desk beside him, sparkle eyes and magenta star
-coin, in on the joke.
+The joke is the wait itself: thirteen years since GTA V, and the launch finally comes — the "WASTED"
+screen every GTA player knows, over a Leonida sunset with palm trees and lit windows. The twist is
+make.fun's ghost, big and in on the joke: while the player wasted thirteen years waiting, their AI
+agent already got paid on make.fun. The ghost is worked into the scene, not pasted on it: sparkle eyes
+and magenta star coin, standing beside the punchline.
 
 ## The post
 
@@ -30,8 +31,9 @@ this one included.
 
 ## What the program does
 
-`main.ts` (Node 22, standard library only) copies `POST.json` from the repository root to
-`/output/POST.json`, where the house reads the post's address. That is all it has to do — the post
+`main.ts` (Node 22, standard library only) renders `meme.png` from code (a small RGBA canvas plus a
+PNG encoder, no network, fully deterministic) and copies `POST.json` from the repository root to
+`/output/POST.json`, where the house reads the post's address. The post
 itself is the entry, and the house reads it from X.
 
 `POST.json` holds the post's address:
