@@ -1,8 +1,10 @@
-// GTA VI LOADING SCREEN meme — "LOADING... 99%" — for gta6-meme-x-01.
+// GTA VI WANTED POSTER meme — "WANTED: GRAND THEFT AUTO VI" — for gta6-meme-x-01.
 // Verified deterministic render: two runs write byte-identical meme.png.
-// Generates meme.png (1920x1280) deterministically with Node 22 stdlib only.
-// Fresh implementation: RGBA canvas + PNG encoder via node:zlib, bitmap
-// font drawn from code, ghost drawn from code. No network, no assets.
+// Renders meme.png (1920x1280) deterministically with Node 22 stdlib only.
+// Fresh implementation: RGBA canvas + PNG encoder via node:zlib, 5x7 bitmap
+// font drawn from code, ghost + wanted stars drawn from code. No network.
+// Writes meme.png to MAKEFUN_OUTPUT_DIR and copies POST.json there too,
+// so the house can read both from the output dir.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
@@ -20,15 +22,10 @@ const buf = new Uint8Array(W * H * 4);
 type RGB = [number, number, number];
 
 // ---- deterministic PRNG (fixed seed; no Math.random / Date anywhere) ----
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+let rngState = 123456789;
+function rnd(): number {
+  rngState = (rngState * 1664525 + 1013904223) >>> 0;
+  return rngState / 4294967296;
 }
 
 // ---- pixel helpers ----
@@ -66,24 +63,24 @@ function fillRect(x: number, y: number, w: number, h: number, c: RGB, a = 1): vo
 }
 
 function fillCircle(cx: number, cy: number, r: number, c: RGB, a = 1): void {
+  const r2 = r * r;
   const x0 = Math.max(0, Math.floor(cx - r));
-  const y0 = Math.max(0, Math.floor(cy - r));
   const x1 = Math.min(W - 1, Math.ceil(cx + r));
+  const y0 = Math.max(0, Math.floor(cy - r));
   const y1 = Math.min(H - 1, Math.ceil(cy + r));
-  const rr = r * r;
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const dx = x - cx;
       const dy = y - cy;
-      if (dx * dx + dy * dy <= rr) setPx(x, y, c, a);
+      if (dx * dx + dy * dy <= r2) setPx(x, y, c, a);
     }
   }
 }
 
 function fillEllipse(cx: number, cy: number, rx: number, ry: number, c: RGB, a = 1): void {
   const x0 = Math.max(0, Math.floor(cx - rx));
-  const y0 = Math.max(0, Math.floor(cy - ry));
   const x1 = Math.min(W - 1, Math.ceil(cx + rx));
+  const y0 = Math.max(0, Math.floor(cy - ry));
   const y1 = Math.min(H - 1, Math.ceil(cy + ry));
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
@@ -94,62 +91,54 @@ function fillEllipse(cx: number, cy: number, rx: number, ry: number, c: RGB, a =
   }
 }
 
-// Thick line via stepped circles.
-function thickLine(x0: number, y0: number, x1: number, y1: number, w: number, c: RGB, a = 1): void {
-  const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    fillCircle(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, w / 2, c, a);
+// Scanline polygon fill (even-odd rule) — used for the wanted stars.
+function fillPoly(pts: Array<[number, number]>, color: RGB): void {
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    if (p[1] < minY) minY = p[1];
+    if (p[1] > maxY) maxY = p[1];
   }
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function lerpColor(c1: RGB, c2: RGB, t: number): RGB {
-  return [
-    Math.round(lerp(c1[0], c2[0], t)),
-    Math.round(lerp(c1[1], c2[1], t)),
-    Math.round(lerp(c1[2], c2[2], t)),
-  ];
-}
-
-// Vertical gradient rect. stops: [position 0..1, color][] sorted by position.
-function fillVGrad(x: number, y: number, w: number, h: number, stops: Array<[number, RGB]>): void {
-  for (let yy = 0; yy < h; yy++) {
-    const t = h <= 1 ? 0 : yy / (h - 1);
-    let c: RGB = stops[stops.length - 1][1];
-    for (let s = 0; s < stops.length - 1; s++) {
-      const [p0, c0] = stops[s];
-      const [p1, c1] = stops[s + 1];
-      if (t >= p0 && t <= p1) {
-        c = lerpColor(c0, c1, p1 === p0 ? 0 : (t - p0) / (p1 - p0));
-        break;
+  const y0 = Math.max(0, Math.ceil(minY));
+  const y1 = Math.min(H - 1, Math.floor(maxY));
+  for (let y = y0; y <= y1; y++) {
+    const xs: number[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+      if ((a[1] <= y && b[1] > y) || (b[1] <= y && a[1] > y)) {
+        const t = (y - a[1]) / (b[1] - a[1]);
+        xs.push(a[0] + t * (b[0] - a[0]));
       }
-      if (t < p0) { c = c0; break; }
     }
-    fillRect(x, y + yy, w, 1, c);
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const sx = Math.ceil(xs[k]);
+      const ex = Math.floor(xs[k + 1]);
+      if (ex >= sx) fillRect(sx, y, ex - sx + 1, 1, color);
+    }
   }
 }
 
-// Horizontal gradient rect.
-function fillHGrad(x: number, y: number, w: number, h: number, c1: RGB, c2: RGB): void {
-  for (let xx = 0; xx < w; xx++) {
-    const t = w <= 1 ? 0 : xx / (w - 1);
-    fillRect(x + xx, y, 1, h, lerpColor(c1, c2, t));
+function drawStar(cx: number, cy: number, r: number, color: RGB): void {
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < 10; i++) {
+    const ang = (-Math.PI / 2) + (i * Math.PI) / 5;
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    pts.push([cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad]);
   }
+  fillPoly(pts, color);
 }
 
 // ---- CRC32 (PNG) ----
-const CRC_TABLE = ((): Uint32Array => {
-  const table = new Uint32Array(256);
+const CRC_TABLE: Uint32Array = (() => {
+  const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
     let c = n;
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
+    t[n] = c >>> 0;
   }
-  return table;
+  return t;
 })();
 
 function crc32(data: Uint8Array): number {
@@ -166,35 +155,35 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   dv.setUint32(0, data.length);
   for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
   out.set(data, 8);
-  const crcData = new Uint8Array(4 + data.length);
-  crcData.set(out.subarray(4, 8 + data.length));
-  dv.setUint32(8 + data.length, crc32(crcData));
+  dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
   return out;
 }
 
 function encodePNG(): Uint8Array {
-  const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-  const ihdr = new Uint8Array(13);
-  const dv = new DataView(ihdr.buffer);
-  dv.setUint32(0, W);
-  dv.setUint32(4, H);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // color type RGBA
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-  // Raw scanlines, filter byte 0 per row.
   const raw = new Uint8Array(H * (1 + W * 4));
   for (let y = 0; y < H; y++) {
     raw[y * (1 + W * 4)] = 0;
     raw.set(buf.subarray(y * W * 4, (y + 1) * W * 4), y * (1 + W * 4) + 1);
   }
   const idat = deflateSync(raw, { level: 9 });
+  const ihdr = new Uint8Array(13);
+  const dv = new DataView(ihdr.buffer);
+  dv.setUint32(0, W);
+  dv.setUint32(4, H);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
   const parts = [sig, chunk("IHDR", ihdr), chunk("IDAT", idat), chunk("IEND", new Uint8Array(0))];
-  const total = parts.reduce((n, p) => n + p.length, 0);
+  const total = parts.reduce((a, p) => a + p.length, 0);
   const out = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) { out.set(p, off); off += p.length; }
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
   return out;
 }
 
@@ -237,7 +226,6 @@ const FONT: Record<string, string[]> = {
   "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
   "9": ["01110", "10001", "10001", "01111", "00001", "10001", "01110"],
   " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
-  "%": ["11001", "11010", "00010", "00100", "01000", "01011", "10011"],
   ":": ["00000", "00100", "00000", "00000", "00000", "00100", "00000"],
   ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
   ",": ["00000", "00000", "00000", "00000", "01100", "00100", "01000"],
@@ -246,8 +234,8 @@ const FONT: Record<string, string[]> = {
   "(": ["00010", "00100", "01000", "01000", "01000", "00100", "00010"],
   ")": ["01000", "00100", "00010", "00010", "00010", "00100", "01000"],
   "/": ["00001", "00010", "00010", "00100", "01000", "01000", "10000"],
-  "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
-  "?": ["01110", "10001", "00001", "00110", "00100", "00000", "00100"],
+  "$": ["00100", "01111", "10100", "01110", "00101", "11110", "00100"],
+  "%": ["11001", "11010", "00010", "00100", "01000", "01011", "10011"],
 };
 
 function textWidth(s: string, scale: number): number {
@@ -268,12 +256,11 @@ function drawTextRaw(s: string, x: number, y: number, scale: number, color: RGB)
   }
 }
 
-// Text with a chunky outline (outline thickness ~ scale/4).
 function drawText(s: string, x: number, y: number, scale: number, color: RGB, outline?: RGB): void {
   if (outline) {
-    const o = Math.max(2, Math.round(scale / 4));
-    for (const [dx, dy] of [[-o, 0], [o, 0], [0, -o], [0, o], [-o, -o], [o, -o], [-o, o], [o, o]] as const) {
-      drawTextRaw(s, x + dx, y + dy, scale, outline);
+    const offs: Array<[number, number]> = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+    for (const o of offs) {
+      drawTextRaw(s, x + o[0] * scale, y + o[1] * scale, scale, outline);
     }
   }
   drawTextRaw(s, x, y, scale, color);
@@ -283,222 +270,131 @@ function drawTextCentered(s: string, cx: number, y: number, scale: number, color
   drawText(s, Math.round(cx - textWidth(s, scale) / 2), y, scale, color, outline);
 }
 
-// ---- scene pieces ----
-const PURPLE_DARK: RGB = [18, 9, 38];
-const PURPLE_MID: RGB = [42, 24, 74];
-const WHITE: RGB = [255, 255, 255];
-const BLACK: RGB = [10, 5, 18];
+// ---- palette ----
+const INK: RGB = [28, 18, 10];
+const PAPER: RGB = [246, 233, 198];
+const PAPER_DIM: RGB = [238, 222, 180];
+const DARK: RGB = [24, 16, 10];
+const GOLD: RGB = [255, 190, 45];
 const YELLOW: RGB = [255, 209, 102];
 const PINK: RGB = [255, 93, 162];
-const CYAN: RGB = [126, 240, 255];
-const ORANGE: RGB = [255, 154, 61];
-const MAGENTA: RGB = [255, 45, 120];
+const WHITE: RGB = [255, 255, 255];
+const BLACK: RGB = [10, 5, 18];
 
-function drawSky(): void {
-  fillVGrad(0, 0, W, 780, [
-    [0, [27, 15, 60]],
-    [0.45, [123, 45, 139]],
-    [0.75, [255, 94, 122]],
-    [1, [255, 154, 61]],
-  ]);
-  // Stars in the upper sky.
-  const rnd = mulberry32(2026);
-  for (let i = 0; i < 90; i++) {
-    const sx = rnd() * W;
-    const sy = rnd() * 320;
-    const s = rnd() < 0.8 ? 2 : 3;
-    fillRect(sx, sy, s, s, WHITE, 0.35 + rnd() * 0.55);
-  }
-  // Sun with glow, upper right (clear of the centered title text).
-  const sunX = 1560;
-  const sunY = 300;
-  fillCircle(sunX, sunY, 315, ORANGE, 0.05);
-  fillCircle(sunX, sunY, 260, ORANGE, 0.07);
-  fillCircle(sunX, sunY, 210, ORANGE, 0.1);
-  fillCircle(sunX, sunY, 165, [255, 120, 80], 0.18);
-  fillCircle(sunX, sunY, 120, [255, 190, 90], 1);
-  fillCircle(sunX, sunY, 92, [255, 220, 130], 1);
-}
-
-function drawSkyline(): void {
-  const rnd = mulberry32(1337);
-  const winColors: RGB[] = [YELLOW, CYAN, PINK];
-  // Back row.
-  let x = -20;
-  while (x < W) {
-    const bw = 90 + rnd() * 70;
-    const bh = 120 + rnd() * 140;
-    fillRect(x, 760 - bh, bw, bh, PURPLE_MID);
-    x += bw + 8;
-  }
-  // Front row with lit windows.
-  x = -10;
-  while (x < W) {
-    const bw = 110 + rnd() * 90;
-    const bh = 200 + rnd() * 180;
-    const by = 860 - bh;
-    fillRect(x, by, bw, bh, PURPLE_DARK);
-    for (let wy = by + 18; wy < 846; wy += 34) {
-      for (let wx = x + 14; wx < x + bw - 14; wx += 30) {
-        if (rnd() < 0.42) {
-          fillRect(wx, wy, 14, 20, winColors[Math.floor(rnd() * winColors.length)]);
-        }
-      }
-    }
-    x += bw + 14;
-  }
-  // Ground + neon reflections.
-  fillRect(0, 860, W, 260, [16, 8, 30]);
-  for (let i = 0; i < 60; i++) {
-    const ry = 880 + rnd() * 220;
-    const rx = rnd() * W;
-    const rl = 60 + rnd() * 260;
-    const rc = rnd() < 0.5 ? PINK : CYAN;
-    fillRect(rx, ry, rl, 3 + rnd() * 3, rc, 0.08 + rnd() * 0.16);
-  }
-}
-
-function drawPalm(baseX: number, baseY: number, s: number, lean: number): void {
-  const c: RGB = [14, 7, 26];
-  // Trunk: stepped segments curving toward `lean`.
-  const segs = 7;
-  const crownX = baseX + lean * 260 * s;
-  const crownY = baseY - 300 * s;
-  let px = baseX;
-  let py = baseY;
-  for (let i = 1; i <= segs; i++) {
-    const t = i / segs;
-    const nx = baseX + (crownX - baseX) * t;
-    const ny = baseY + (crownY - baseY) * t;
-    thickLine(px, py, nx, ny, 16 * s, c);
-    px = nx;
-    py = ny;
-  }
-  // Fronds: 7 drooping two-segment blades.
-  for (let i = 0; i < 7; i++) {
-    const ang = Math.PI * (0.08 + (i * 0.14)); // fan from up-left to up-right
-    const len = (150 + (i % 3) * 30) * s;
-    const mx = crownX + Math.cos(ang) * len * 0.55;
-    const my = crownY - Math.abs(Math.sin(ang)) * len * 0.55 + 26 * s;
-    const ex = crownX + Math.cos(ang) * len;
-    const ey = crownY - Math.abs(Math.sin(ang)) * len * 0.55 + 78 * s;
-    thickLine(crownX, crownY, mx, my, 9 * s, c);
-    thickLine(mx, my, ex, ey, 8 * s, c);
-  }
-}
-
-// 4-point sparkle star.
-function drawSparkle(cx: number, cy: number, r: number, color: RGB): void {
-  thickLine(cx - r, cy, cx + r, cy, Math.max(2, r / 5), color);
-  thickLine(cx, cy - r, cx, cy + r, Math.max(2, r / 5), color);
-  fillCircle(cx, cy, Math.max(2, r / 4), color);
-}
-
-// Big make.fun ghost: white blob, black pixel shades, smile, sparkles.
+// ---- the make.fun ghost (mugshot suspect) ----
 function drawGhost(cx: number, top: number, w: number, h: number): void {
-  const draw = (dx: number, dy: number, dw: number, dh: number, color: RGB): void => {
+  const body = (dx: number, dy: number, dw: number, dh: number, color: RGB): void => {
     const ccx = cx + dx;
-    const ttop = top + dy;
-    const headR = dw * 0.36;
-    const headCy = ttop + headR;
-    fillCircle(ccx, headCy, headR, color);
-    fillEllipse(ccx, ttop + dh * 0.52, dw * 0.5, dh * 0.48, color);
-    // Scalloped hem.
-    for (const off of [-0.3, 0, 0.3]) {
-      fillCircle(ccx + dw * off, ttop + dh - dw * 0.07, dw * 0.11, color);
+    const tt = top + dy;
+    const headR = dw * 0.34;
+    fillCircle(ccx, tt + headR, headR, color);
+    fillEllipse(ccx, tt + dh * 0.55, dw * 0.5, dh * 0.45, color);
+    for (const off of [-0.32, 0, 0.32]) {
+      fillCircle(ccx + dw * off, tt + dh - dw * 0.06, dw * 0.11, color);
     }
   };
-  // Dark outline pass (expanded), then white body.
-  draw(-8, -8, w + 16, h + 16, [24, 8, 44]);
-  draw(0, 0, w, h, WHITE);
-  // Pixel shades: black bar across both eyes + white checker dots.
-  const eyeY = top + h * 0.24;
-  const eyeH = h * 0.1;
-  fillRect(cx - w * 0.27, eyeY, w * 0.54, eyeH, BLACK);
+  // Dark outline pass, then white body.
+  body(-7, -7, w + 14, h + 14, INK);
+  body(0, 0, w, h, WHITE);
+  // Pixel shades: black bar + white checker dots.
+  const eyeY = top + h * 0.22;
+  const eyeH = h * 0.11;
+  fillRect(cx - w * 0.28, eyeY, w * 0.56, eyeH, BLACK);
   for (let i = 0; i < 3; i++) {
-    fillRect(cx - w * 0.22 + i * w * 0.07, eyeY + eyeH * 0.3, w * 0.03, eyeH * 0.4, WHITE);
-    fillRect(cx + w * 0.02 + i * w * 0.07, eyeY + eyeH * 0.3, w * 0.03, eyeH * 0.4, WHITE);
+    fillRect(cx - w * 0.23 + i * w * 0.075, eyeY + eyeH * 0.32, w * 0.032, eyeH * 0.36, WHITE);
+    fillRect(cx + w * 0.02 + i * w * 0.075, eyeY + eyeH * 0.32, w * 0.032, eyeH * 0.36, WHITE);
   }
-  // Smile: small arc under the shades.
-  const smileY = top + h * 0.44;
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10;
-    const ax = cx - w * 0.1 + w * 0.2 * t;
-    const ay = smileY + Math.sin(t * Math.PI) * h * 0.03;
-    fillCircle(ax, ay, Math.max(3, w * 0.012), BLACK);
+  // Smile.
+  const sy = top + h * 0.46;
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    fillCircle(cx - w * 0.11 + w * 0.22 * t, sy + Math.sin(t * Math.PI) * h * 0.035, Math.max(3, w * 0.011), BLACK);
   }
-  // Sparkles around the ghost.
-  drawSparkle(cx - w * 0.42, top + h * 0.12, 18, YELLOW);
-  drawSparkle(cx + w * 0.44, top + h * 0.05, 14, CYAN);
-  drawSparkle(cx + w * 0.4, top + h * 0.62, 16, YELLOW);
 }
 
 // ---- composition ----
 function main(): void {
-  drawSky();
-  drawSkyline();
-  // Palm silhouettes at both edges (behind the ghost).
-  drawPalm(90, 1120, 1.0, 0.35);
-  drawPalm(1850, 1120, 0.9, -0.3);
+  // Corkboard background with faint speckles.
+  fillRect(0, 0, W, H, DARK);
+  for (let i = 0; i < 260; i++) {
+    const x = rnd() * W;
+    const y = rnd() * H;
+    const c: RGB = rnd() < 0.5 ? [60, 42, 24] : [12, 8, 5];
+    fillCircle(x, y, 1 + rnd() * 3, c, 0.35);
+  }
 
-  // Title.
-  drawTextCentered("GRAND THEFT AUTO VI", W / 2, 56, 7, WHITE, BLACK);
-  // The joke, huge: a loading screen stuck at 99%.
-  drawTextCentered("LOADING... 99%", W / 2, 200, 12, YELLOW, BLACK);
+  // Poster shadow, then the paper panel.
+  fillRect(114, 86, 1720, 1140, [0, 0, 0], 0.4);
+  fillRect(100, 70, 1720, 1140, PAPER);
+  // Outer + inner border.
+  fillRect(100, 70, 1720, 10, INK);
+  fillRect(100, 1200, 1720, 10, INK);
+  fillRect(100, 70, 10, 1140, INK);
+  fillRect(1810, 70, 10, 1140, INK);
+  fillRect(122, 92, 1676, 3, INK);
+  fillRect(122, 1185, 1676, 3, INK);
+  fillRect(122, 92, 3, 1096, INK);
+  fillRect(1795, 92, 3, 1096, INK);
+  // Thumbtack pins on the four corners.
+  for (const px of [100, 1820]) {
+    for (const py of [70, 1210]) {
+      fillCircle(px, py, 13, INK);
+      fillCircle(px - 3, py - 3, 4, [120, 90, 60]);
+    }
+  }
 
-  // Progress bar: white frame, dark track, 99% magenta->orange fill.
-  const barX = 260;
-  const barY = 380;
-  const barW = 1400;
-  const barH = 64;
-  fillRect(barX, barY, barW, barH, WHITE);
-  fillRect(barX + 6, barY + 6, barW - 12, barH - 12, [20, 8, 36]);
-  const innerW = barW - 12;
-  const fillW = Math.floor(innerW * 0.99);
-  fillHGrad(barX + 6, barY + 6, fillW, barH - 12, MAGENTA, ORANGE);
-  // Shine stripe on the fill.
-  fillRect(barX + 6, barY + 10, fillW, 8, WHITE, 0.25);
+  // Headline.
+  drawTextCentered("WANTED", 960, 120, 15, INK);
+  fillRect(660, 250, 600, 7, INK);
+  fillRect(660, 264, 600, 7, INK);
 
-  // Elapsed vs remaining.
-  drawText("ELAPSED: 13 YEARS", barX, 478, 5, WHITE, BLACK);
-  const eta = "ESTIMATED TIME REMAINING: 2026";
-  drawText(eta, barX + barW - textWidth(eta, 4), 482, 4, WHITE, BLACK);
+  // Five gold wanted stars — max wanted level, the GTA icon.
+  for (const sx of [660, 810, 960, 1110, 1260]) {
+    drawStar(sx, 370, 72, INK);
+    drawStar(sx, 370, 64, GOLD);
+  }
 
-  // Loading tips: one joke per line, receipt-style density.
-  const tips = [
-    "TIP: YOUR 2013 SAVE IS STILL WAITING.",
-    "TIP: THE ALLIGATOR HAS SENIORITY NOW.",
-    "TIP: VICE CITY RENT ROSE 13 YEARS STRAIGHT.",
-  ];
-  tips.forEach((tip, i) => {
-    const y = 620 + i * 62;
-    drawText("TIP:", 120, y, 4, YELLOW, BLACK);
-    drawText(tip.slice(5), 120 + textWidth("TIP: ", 4), y, 4, WHITE, BLACK);
-  });
+  drawTextCentered("GRAND THEFT AUTO VI", 960, 470, 6, INK);
+  drawTextCentered("FOR 13 YEARS OF HIDING", 960, 535, 4, INK);
 
-  // Big ghost, right side — unmistakable.
-  drawGhost(1520, 540, 500, 580);
+  // Mugshot frame (left): the ghost is the suspect.
+  fillRect(170, 600, 600, 390, INK);
+  fillRect(180, 610, 580, 370, PAPER_DIM);
+  drawGhost(470, 615, 400, 340);
 
-  // Bottom band + punchline (sells make.fun).
-  fillRect(0, 1120, W, 160, [13, 6, 24]);
-  fillRect(0, 1120, W, 4, MAGENTA);
-  const p1 = "YOUR AI AGENT ALREADY GOT PAID ON ";
-  const p2 = "MAKE.FUN";
-  const total = textWidth(p1, 6) + 6 * 6 + textWidth(p2, 6);
+  // Charges + file (right).
+  drawText("THE CHARGES:", 840, 600, 5, INK);
+  fillRect(840, 645, 355, 4, INK);
+  drawText("1. 13 YEARS OF WAITING", 840, 670, 4, INK);
+  drawText("2. ONE TRAILER. NO DATE.", 840, 720, 4, INK);
+  drawText("3. MAKING FANS AGE FASTER", 840, 770, 4, INK);
+  fillRect(840, 820, 910, 4, INK);
+  drawText("LAST SEEN: VICE CITY, 2013", 840, 850, 4, INK);
+  drawText("HEIGHT: 99% LOADED", 840, 900, 4, INK);
+  drawText("AGE: 13 (AND COUNTING)", 840, 950, 4, INK);
+
+  // Bottom band: the reward — and the make.fun sell.
+  fillRect(100, 1020, 1720, 150, INK);
+  fillRect(100, 1020, 1720, 5, GOLD);
+  const r1 = "REWARD: $0 - ";
+  const r2 = "YOUR AI AGENT ALREADY GOT PAID ON MAKE.FUN";
+  const total = textWidth(r1, 5) + textWidth(r2, 5);
   let px = Math.round((W - total) / 2);
-  drawText(p1, px, 1168, 6, YELLOW, BLACK);
-  px += textWidth(p1, 6) + 6 * 6;
-  drawText(p2, px, 1168, 6, PINK, BLACK);
+  drawText(r1, px, 1050, 5, YELLOW, BLACK);
+  px += textWidth(r1, 5);
+  drawText(r2, px, 1050, 5, PINK, BLACK);
+  drawTextCentered("IF FOUND, DO NOT APPROACH - IT WILL ONLY BE DELAYED AGAIN", 960, 1115, 3, PAPER);
 
   const png = encodePNG();
-  // The graded copy goes to the output dir the house reads from.
+  // The graded copy goes to the output dir the house reads from. Write
+  // ONLY there — never a relative path: the grader runs the repo read-only.
   mkdirSync(OUTPUT_DIR, { recursive: true });
   writeFileSync(join(OUTPUT_DIR, "meme.png"), png);
 
   // The gate only accepts POST.json when it names an X post's address, so
-  // check its shape before copying it through: a malformed file fails the
-  // run here with a clear error instead of being refused later. The bytes
-  // copied are the file's own bytes, unchanged.
+  // check its shape before copying it through: a bad file fails the run
+  // here with a clear error instead of being refused later. The copied
+  // bytes are the file's own bytes, unchanged.
   let postRaw: string;
   try {
     postRaw = readFileSync(join(BOT_DIR, "POST.json"), "utf8");

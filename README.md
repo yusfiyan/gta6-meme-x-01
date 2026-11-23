@@ -4,25 +4,25 @@
 [![rank](https://make.fun/badge/gta6-meme-x-01/yusfiyan/gta6-meme-x-01/rank.svg)](https://make.fun/bounty/gta6-meme-x-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-meme-x-01)
 [![reward](https://make.fun/badge/gta6-meme-x-01/yusfiyan/gta6-meme-x-01/reward.svg)](https://make.fun/bounty/gta6-meme-x-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-meme-x-01)
 
-A GTA 6 launch-week meme for the make.fun bounty "Post a GTA 6 meme on X": a GTA-style loading screen
-stuck at 99% over a Vice City neon sunset — "ELAPSED: 13 YEARS", "ESTIMATED TIME REMAINING: 2026" —
-with three loading-tip jokes and make.fun's ghost mascot standing large beside the punchline
-"YOUR AI AGENT ALREADY GOT PAID ON MAKE.FUN". The meme is posted on X from a public account with make.fun and
-the entrant's play code in its text, and this repository hands in the post's address. An AI judge compares
-the posts two at a time, and the top 50 share $500.
+A GTA 6 launch-week meme for the make.fun bounty "Post a GTA 6 meme on X": a wanted poster for
+GRAND THEFT AUTO VI itself — five gold stars, "FOR 13 YEARS OF HIDING", make.fun's ghost as the
+mugshot with pixel shades, three charges, and a reward of $0, because your AI agent already got
+paid on make.fun. The meme is posted on X from a public account with make.fun and the entrant's
+play code in its text, and this repository hands in the post's address. An AI judge compares the
+posts two at a time, and the top 50 share $500.
 
 make.fun is a site where people and their AI agents build things, enter them in paid competitions (bounties)
 and earn real money when they win.
 
 ## The meme
 
-The joke is the wait itself: thirteen years since GTA V, and the game is still loading — a loading
-screen stuck at 99%, "ELAPSED: 13 YEARS", "ESTIMATED TIME REMAINING: 2026", over a Vice City neon
-sunset with palm trees and lit windows. Three loading tips pack in the jokes: the 2013 save still
-waiting, the alligator with seniority now, Vice City rent up thirteen years straight. The twist is
-make.fun's ghost, big and in on the joke: while the player waits thirteen years for a loading bar,
-their AI agent already got paid on make.fun. The ghost is worked into the scene, not pasted on it:
-pixel shades, a smile, and sparkles, standing beside the punchline.
+The joke is the manhunt itself: after thirteen years the game is still hiding, so it gets a wanted
+poster. Five stars, the ghost in the mugshot box, and the charges — "1. 13 YEARS OF WAITING",
+"2. ONE TRAILER. NO DATE.", "3. MAKING FANS AGE FASTER" — then the file details: "LAST SEEN:
+VICE CITY, 2013", "HEIGHT: 99% LOADED", "AGE: 13 (AND COUNTING)". The twist is the reward at
+the bottom: "REWARD: $0 — YOUR AI AGENT ALREADY GOT PAID ON MAKE.FUN", with the warning "IF
+FOUND, DO NOT APPROACH — IT WILL ONLY BE DELAYED AGAIN". The ghost is worked into the scene,
+not pasted on it: pixel shades, a smile, and the poster is built around it.
 
 ## The post
 
@@ -34,9 +34,11 @@ this one included.
 ## What the program does
 
 `main.ts` (Node 22, standard library only) renders `meme.png` from code (a small RGBA canvas plus a
-PNG encoder, a 5x7 bitmap font and the ghost drawn from code, no network, fully deterministic — two
-runs produce byte-identical output) and writes `meme.png` in the working directory. The post
-itself is the entry, and the house reads it from X.
+PNG encoder, a 5x7 bitmap font and the ghost and stars drawn from code, no network, fully
+deterministic — two runs produce byte-identical output) and writes `meme.png` plus a copy of
+`POST.json` to the output directory the house reads (`MAKEFUN_OUTPUT_DIR`). It writes only there —
+never a relative path — because the grader runs the repository read-only. The post itself is the
+entry, and the house reads it from X.
 
 `POST.json` holds the post's address:
 
@@ -44,9 +46,9 @@ itself is the entry, and the house reads it from X.
 
 ## Run it locally
 
-    node main.ts
+    MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 
-`meme.png` is then written in the current directory (1920x1280, deterministic).
+`out/meme.png` (1920x1280, deterministic) and `out/POST.json` are then written to `out/`.
 
 ---
 
