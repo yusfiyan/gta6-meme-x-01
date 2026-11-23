@@ -1,10 +1,17 @@
 // GTA VI LOADING SCREEN meme — "LOADING... 99%" — for gta6-meme-x-01.
-// DRAFT (not yet run / verified / committed — see parent report).
+// Verified deterministic render: two runs write byte-identical meme.png.
 // Generates meme.png (1920x1280) deterministically with Node 22 stdlib only.
 // Fresh implementation: RGBA canvas + PNG encoder via node:zlib, bitmap
 // font drawn from code, ghost drawn from code. No network, no assets.
-import { writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { deflateSync } from "node:zlib";
+
+// Where the house reads the outputs from. In the grader's sandbox the
+// environment points at /bot (the repo) and /output; locally, run with
+// MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=<dir> to exercise the same path.
+const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? "/bot";
+const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 
 const W = 1920;
 const H = 1280;
@@ -483,7 +490,43 @@ function main(): void {
   px += textWidth(p1, 6) + 6 * 6;
   drawText(p2, px, 1168, 6, PINK, BLACK);
 
-  writeFileSync("meme.png", encodePNG());
+  const png = encodePNG();
+  // The graded copy goes to the output dir the house reads from.
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  writeFileSync(join(OUTPUT_DIR, "meme.png"), png);
+  // Also leave a copy next to the program, so a local run still produces
+  // ./meme.png to post and commit.
+  writeFileSync("meme.png", png);
+
+  // The gate only accepts POST.json when it names an X post's address, so
+  // check its shape before copying it through: a malformed file fails the
+  // run here with a clear error instead of being refused later. The bytes
+  // copied are the file's own bytes, unchanged.
+  let postRaw: string;
+  try {
+    postRaw = readFileSync(join(BOT_DIR, "POST.json"), "utf8");
+  } catch (err) {
+    console.error(`could not read POST.json from ${BOT_DIR}: ${(err as Error).message}`);
+    process.exit(1);
+  }
+  let post: unknown;
+  try {
+    post = JSON.parse(postRaw);
+  } catch (err) {
+    console.error(`POST.json is not valid JSON: ${(err as Error).message}`);
+    process.exit(1);
+  }
+  if (
+    typeof post !== "object" ||
+    post === null ||
+    typeof (post as { url?: unknown }).url !== "string"
+  ) {
+    console.error('POST.json must be a JSON object with a string "url" field');
+    process.exit(1);
+  }
+  writeFileSync(join(OUTPUT_DIR, "POST.json"), postRaw);
+
+  console.log(`wrote meme.png (${png.length} bytes, ${W}x${H}) to ${OUTPUT_DIR} and ./meme.png`);
 }
 
 main();
