@@ -494,9 +494,6 @@ function main(): void {
   // The graded copy goes to the output dir the house reads from.
   mkdirSync(OUTPUT_DIR, { recursive: true });
   writeFileSync(join(OUTPUT_DIR, "meme.png"), png);
-  // Also leave a copy next to the program, so a local run still produces
-  // ./meme.png to post and commit.
-  writeFileSync("meme.png", png);
 
   // The gate only accepts POST.json when it names an X post's address, so
   // check its shape before copying it through: a malformed file fails the
@@ -526,7 +523,7 @@ function main(): void {
   }
   writeFileSync(join(OUTPUT_DIR, "POST.json"), postRaw);
 
-  console.log(`wrote meme.png (${png.length} bytes, ${W}x${H}) to ${OUTPUT_DIR} and ./meme.png`);
+  console.log(`wrote meme.png (${png.length} bytes, ${W}x${H}) to ${OUTPUT_DIR}`);
 }
 
 main();
